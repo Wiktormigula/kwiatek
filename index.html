@@ -16,7 +16,10 @@ p { position: fixed; left: 16px; bottom: 12px; margin: 0; font: 13px/1.4 ui-mono
 <p>Przesuń kursor, żeby zmienić kierunek światła.</p>
 <script>
 const cv = document.getElementById('c');
-const g = cv.getContext('2d');
+const gMain = cv.getContext('2d');
+const art = document.createElement('canvas'), g = art.getContext('2d');
+const mid = document.createElement('canvas'), gm = mid.getContext('2d');
+const low = document.createElement('canvas'), gl = low.getContext('2d');
 const RAMP = ' .,:;-=+*ixnX#%@';
 const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const TAU = Math.PI * 2, HEAD = 0.22, LOOP = 22;
@@ -25,7 +28,10 @@ let W, H, cw, ch, cols, rows, S;
 function resize() {
   const dpr = Math.min(devicePixelRatio || 1, 2);
   W = innerWidth; H = innerHeight;
-  cv.width = W * dpr; cv.height = H * dpr;
+  cv.width = art.width = W * dpr; cv.height = art.height = H * dpr;
+  mid.width = Math.ceil(W / 4); mid.height = Math.ceil(H / 4);
+  low.width = Math.ceil(W / 14); low.height = Math.ceil(H / 14);
+  gMain.setTransform(dpr, 0, 0, dpr, 0, 0);
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   const fs = Math.max(9, Math.min(15, Math.round(W / 95)));
   g.font = fs + 'px ui-monospace, Menlo, Consolas, "DejaVu Sans Mono", monospace';
@@ -109,32 +115,32 @@ function buildLeaves(grow) {
 function buildPetals(op, sc) {
   let off = 0;
   LAYERS.forEach((n, k) => {
-    const f = k / 5, Lk = (0.22 + 0.20 * f) * sc, r0 = (0.025 + 0.034 * k) * sc;
+    const f = k / 5, Lk = (0.26 + 0.28 * f) * sc, r0 = (0.028 + 0.036 * k) * sc, ok = smooth((op - 0.5 * (1 - f)) / 0.5);
     const rr = new Float32Array(NU), yy = new Float32Array(NU);
     let r = r0, y = HEAD + 0.07 - 0.05 * f;
     for (let u = 0; u < NU; u++) {
       const t = u / (NU - 1);
       const closed = 0.38 - 1.0 * Math.pow(t, 1.1) - 0.15 * f;
-      const open = 0.05 + 0.2 * f + (0.18 + 0.6 * f) * Math.pow(t, 1.5) + 0.55 * f * Math.pow(t, 4);
-      const beta = lerp(closed, open, op);
+      const open = 0.08 + 0.3 * f + (0.22 + 0.85 * f) * Math.pow(t, 1.45) + 0.7 * f * Math.pow(t, 3.2);
+      const beta = lerp(closed, open, ok);
       rr[u] = r; yy[u] = y;
       r += Math.max(0, Math.sin(beta)) * Lk / (NU - 1) + Math.min(0, Math.sin(beta)) * Lk / (NU - 1) * 0.8;
       y += Math.cos(beta) * Lk / (NU - 1);
       r = Math.max(r, 0.004);
     }
-    const half = Math.PI / n * 1.65;
+    const half = Math.PI / n * (1.7 - 0.35 * ok * f);
     for (let p = 0; p < n; p++) {
       const tc = p * TAU / n + k * 0.9 + k * k * 0.31;
       for (let u = 0; u < NU; u++) for (let v = 0; v < NV; v++) {
         const t = u / (NU - 1), vv = v / (NV - 1) * 2 - 1;
         const wd = 0.55 + 0.45 * Math.sin(Math.PI * (0.15 + 0.85 * t));
         const th = tc + vv * half * wd;
-        const re = rr[u] * (1 - 0.10 * vv * vv);
-        const ye = yy[u] + 0.05 * vv * vv * Lk;
+        const re = rr[u] * (1 - 0.12 * vv * vv) * (1 + 0.05 * ok * Math.abs(vv) * Math.sin(t * 9 + p * 2));
+        const ye = yy[u] + 0.08 * vv * vv * Lk * (0.4 + ok);
         const q = off + p * NU * NV + u * NV + v;
         P[q * 3] = re * Math.sin(th); P[q * 3 + 1] = ye; P[q * 3 + 2] = re * Math.cos(th);
         KIND[q] = 2; F[q] = f; VIS[q] = sc > 0.03 ? 1 : 0;
-        DT[q] = (0.45 + 0.75 * Math.pow(t, 0.7)) * (0.7 + 0.3 * (1 - Math.pow(Math.abs(vv), 3))) * (0.88 + 0.12 * Math.sin(p * 2.7 + k));
+        DT[q] = (0.4 + 0.85 * Math.pow(t, 0.7)) * (0.55 + 0.45 * (1 - Math.pow(Math.abs(vv), 2.5))) * (0.88 + 0.12 * Math.sin(p * 2.7 + k));
       }
       normals(off + p * NU * NV, NU, NV, (kk, nx, ny, nz) => nx * P[kk * 3] + nz * P[kk * 3 + 2] < 0);
     }
@@ -147,15 +153,17 @@ function frameAt(t, Lv) {
   const tt = t % LOOP;
   const grow = smooth(tt / 3.6);
   const sc = smooth((tt - 2.6) / 2.4);
-  const op = smooth((tt - 4.5) / 10);
+  const op = smooth((tt - 4.5) / 11);
   buildPetals(op, sc);
   buildLeaves(grow);
   for (let i = 0; i < NS; i++) VIS[NP + i] = F[NP + i] <= grow * 1.0 ? 1 : 0;
 
-  const yaw = 0.55 * Math.sin(tt * 0.35 + 0.5) * smooth((tt - 2) / 3), tilt = 0.55;
+  const yaw = 0.55 * Math.sin(tt * 0.35 + 0.5) * smooth((tt - 2) / 3), tilt = 0.6;
   const cy = Math.cos(yaw), sy = Math.sin(yaw), ct = Math.cos(tilt), st = Math.sin(tilt);
   const rot = (x, y, z) => { const x1 = cy * x + sy * z, z1 = -sy * x + cy * z; return [x1, y * ct - z1 * st, y * st + z1 * ct]; };
   const hv = norm([Lv[0], Lv[1], Lv[2] + 1]);
+  const rim = norm([Math.cos(tt * 0.8), 0.35, Math.sin(tt * 0.8) - 0.3]);
+  const hr = norm([rim[0], rim[1], rim[2] + 1]);
   depth.fill(-1e9); lum.fill(0); kind.fill(0);
   const hit = (x, y, z, l, kd, f) => {
     const f2 = 4.5 / (4.5 - z);
@@ -168,18 +176,21 @@ function frameAt(t, Lv) {
     if (!VIS[k]) continue;
     const p = rot(P[k * 3], P[k * 3 + 1] - 0.1, P[k * 3 + 2]);
     const n = rot(NR[k * 3], NR[k * 3 + 1], NR[k * 3 + 2]);
+    if (n[2] < 0) { n[0] = -n[0]; n[1] = -n[1]; n[2] = -n[2]; }   // light both sides of a petal
     const d = Math.max(0, n[0] * Lv[0] + n[1] * Lv[1] + n[2] * Lv[2]);
     const sp = Math.pow(Math.max(0, n[0] * hv[0] + n[1] * hv[1] + n[2] * hv[2]), 22);
     const kd = KIND[k], f = F[k];
-    let l = 0.34 + 0.62 * d + 0.35 * sp;
+    const dr = Math.max(0, n[0] * rim[0] + n[1] * rim[1] + n[2] * rim[2]);
+    const sr = Math.pow(Math.max(0, n[0] * hr[0] + n[1] * hr[1] + n[2] * hr[2]), 14);
+    let l = 0.2 + 0.62 * d + 0.7 * sp + 0.28 * dr * dr + 0.45 * sr;
     if (kd === 2) l *= (0.8 + 0.2 * f) * DT[k];
-    hit(p[0], p[1], p[2], Math.min(1.2, l), kd + 1, f);
+    hit(p[0], p[1], p[2], Math.min(1.6, l), kd + 1, f);
   }
   // dew glints on the outer petals
   if (op > 0.8) for (let q = 0; q < 14; q++) {
     const idx = Math.floor(hash(q, 7) * (LAYERS[5] * NU * NV)) + (NP - LAYERS[5] * NU * NV);
     if (Math.sin(tt * 3 + q * 2.3) > 0.7) {
-      const p = rot(P[idx * 3], P[idx * 3 + 1] - 0.1, P[idx * 3 + 2]); hit(p[0], p[1], p[2] + 0.02, 1.2, 4, 1);
+      const p = rot(P[idx * 3], P[idx * 3 + 1] - 0.1, P[idx * 3 + 2]); hit(p[0], p[1], p[2] + 0.02, 1.5, 4, 1);
     }
   }
   // drifting dust
@@ -212,22 +223,46 @@ function frame(now) {
   for (let a = 0; a < 3; a++) L[a] = lerp(L[a], target[a], 0.06);
   frameAt(still ? 14 : clock, norm(L));
   g.fillStyle = '#06050a'; g.fillRect(0, 0, W, H);
+  const glints = [];
   for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
     const c = j * cols + i, kd = kind[c];
     if (!kd) continue;
-    // silhouette is a little brighter than the inside
     let l = lum[c];
+    const raw = l;
     if (kd < 4 && (i === 0 || !kind[c - 1] || !kind[c + 1] || j === 0 || !kind[c - cols] || !kind[c + cols])) l = Math.max(l, 0.55) * 1.1;
-    l = Math.min(1, l * 1.3);
+    l = Math.min(1, l * 1.25);
     let ci = Math.min(RAMP.length - 1, Math.floor(l * (RAMP.length - 1) + 0.5));
     let r, gr, b;
-    if (kd === 3) { const f = fr[c]; const m = 0.5 + 0.5 * l; r = lerp(215, 255, f) * m; gr = lerp(24, 100, f) * m; b = lerp(66, 150, f) * m; }
-    else if (kd === 1 || kd === 2) { const m = 0.35 + 0.65 * l; r = 50 * m; gr = (kd === 1 ? 190 : 205) * m; b = 90 * m; }
-    else { ci = l > 0.8 ? 8 : l > 0.45 ? 7 : 1; r = 255 * l; gr = (kd === 4 ? 255 : 200) * l; b = (kd === 4 ? 255 : 220) * l; }
+    if (kd === 3) {
+      const f = fr[c], m = 0.4 + 0.6 * l, w = Math.max(0, raw - 0.95) * 0.9;
+      r = lerp(215, 255, f) * m + 255 * w; gr = lerp(24, 100, f) * m + 230 * w; b = lerp(66, 150, f) * m + 240 * w;
+      if (raw > 1.2) { ci = 8; glints.push([raw, i, j]); }
+    } else if (kd === 1 || kd === 2) { const m = 0.3 + 0.55 * l; r = 40 * m; gr = (kd === 1 ? 170 : 190) * m; b = 80 * m; }
+    else { ci = l > 0.8 ? 8 : l > 0.45 ? 7 : 1; r = 255 * l; gr = (kd === 4 ? 255 : 200) * l; b = (kd === 4 ? 255 : 220) * l; if (kd === 4) glints.push([2, i, j]); }
     if (ci === 0) continue;
-    g.fillStyle = css(r | 0, gr | 0, b | 0);
-    g.fillText(kd >= 4 ? RAMP[ci] : RAMP[ci], (i + 0.5) * cw, (j + 0.5) * ch);
+    g.fillStyle = css(Math.min(255, r) | 0, Math.min(255, gr) | 0, Math.min(255, b) | 0);
+    g.fillText(RAMP[ci], (i + 0.5) * cw, (j + 0.5) * ch);
   }
+  // four-pointed rays on the brightest glints
+  glints.sort((a, b) => b[0] - a[0]);
+  glints.slice(0, 6).forEach(([, i, j], n) => {
+    const reach = 3 + Math.round(3 * (0.5 + 0.5 * Math.sin(clock * 6 + n * 1.7)));
+    for (let d = 1; d <= reach; d++) {
+      const v = 1 - d / (reach + 1), col = css((255 * v) | 0, (235 * v) | 0, (245 * v) | 0);
+      g.fillStyle = col;
+      g.fillText('-', (i + 0.5 + d * 2) * cw, (j + 0.5) * ch); g.fillText('-', (i + 0.5 - d * 2) * cw, (j + 0.5) * ch);
+      g.fillText('|', (i + 0.5) * cw, (j + 0.5 + d) * ch); g.fillText('|', (i + 0.5) * cw, (j + 0.5 - d) * ch);
+    }
+  });
+  // glow: shrink the picture twice and add it back, soft
+  gm.drawImage(art, 0, 0, mid.width, mid.height);
+  gl.drawImage(mid, 0, 0, low.width, low.height);
+  gMain.globalCompositeOperation = 'source-over';
+  gMain.drawImage(art, 0, 0, W, H);
+  gMain.globalCompositeOperation = 'lighter';
+  gMain.globalAlpha = 0.55; gMain.drawImage(mid, 0, 0, W, H);
+  gMain.globalAlpha = 0.9; gMain.drawImage(low, 0, 0, W, H);
+  gMain.globalAlpha = 1; gMain.globalCompositeOperation = 'source-over';
 }
 resize();
 addEventListener('resize', resize);
