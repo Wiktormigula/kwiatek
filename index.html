@@ -2,13 +2,14 @@
 <html lang="pl">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Róża z liter</title>
 <style>
 :root { color-scheme: dark; --bg: #05060b; --dim: #6b7089; }
 html, body { height: 100%; margin: 0; background: var(--bg); overflow: hidden; }
-canvas { display: block; width: 100%; height: 100%; }
-p { position: fixed; left: 16px; bottom: 12px; margin: 0; font: 13px/1.4 ui-monospace, Menlo, Consolas, monospace; color: var(--dim); pointer-events: none; }
+body { display: grid; place-items: center; padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px); box-sizing: border-box; }
+canvas { display: block; max-width: 100%; }
+p { position: fixed; left: 16px; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); margin: 0; font: 13px/1.4 ui-monospace, Menlo, Consolas, monospace; color: var(--dim); pointer-events: none; }
 </style>
 </head>
 <body>
@@ -27,7 +28,8 @@ let W, H, cw, ch, cols, rows, S;
 
 function resize() {
   const dpr = Math.min(devicePixelRatio || 1, 2);
-  W = innerWidth; H = innerHeight;
+  W = Math.min(innerWidth, 780); H = Math.min(innerHeight, 720);
+  cv.style.width = W + 'px'; cv.style.height = H + 'px';
   cv.width = art.width = W * dpr; cv.height = art.height = H * dpr;
   mid.width = Math.ceil(W / 4); mid.height = Math.ceil(H / 4);
   low.width = Math.ceil(W / 14); low.height = Math.ceil(H / 14);
@@ -52,7 +54,8 @@ const hash = (x, y) => (((x * 73856093) ^ (y * 19349663)) >>> 0) % 1000 / 1000;
 let L = [-0.5, 0.6, 0.65], target = L.slice();
 const norm = v => { const n = Math.hypot(...v); return v.map(a => a / n); };
 addEventListener('pointermove', e => {
-  target = norm([(e.clientX / W - 0.5) * 2.6, -(e.clientY / H - 0.5) * 2.6, 0.6]);
+  const r = cv.getBoundingClientRect();
+  target = norm([((e.clientX - r.left) / W - 0.5) * 2.6, -((e.clientY - r.top) / H - 0.5) * 2.6, 0.6]);
 });
 
 // geometry buffers
@@ -236,7 +239,7 @@ function frame(now) {
     if (kd === 3) {
       const f = fr[c], m = 0.4 + 0.6 * l, w = Math.max(0, raw - 0.95) * 0.9;
       r = lerp(215, 255, f) * m + 255 * w; gr = lerp(24, 100, f) * m + 230 * w; b = lerp(66, 150, f) * m + 240 * w;
-      if (raw > 1.2) { ci = 8; glints.push([raw, i, j]); }
+      if (raw > 1.35) { ci = 8; glints.push([raw, i, j]); }
     } else if (kd === 1 || kd === 2) { const m = 0.3 + 0.55 * l; r = 40 * m; gr = (kd === 1 ? 170 : 190) * m; b = 80 * m; }
     else { ci = l > 0.8 ? 8 : l > 0.45 ? 7 : 1; r = 255 * l; gr = (kd === 4 ? 255 : 200) * l; b = (kd === 4 ? 255 : 220) * l; if (kd === 4) glints.push([2, i, j]); }
     if (ci === 0) continue;
@@ -245,13 +248,18 @@ function frame(now) {
   }
   // four-pointed rays on the brightest glints
   glints.sort((a, b) => b[0] - a[0]);
-  glints.slice(0, 6).forEach(([, i, j], n) => {
-    const reach = 3 + Math.round(3 * (0.5 + 0.5 * Math.sin(clock * 6 + n * 1.7)));
+  const rayed = [];
+  for (const q of glints) {
+    if (rayed.length >= 3) break;
+    if (rayed.every(r => Math.hypot((r[1] - q[1]) * 2, r[2] - q[2]) > 10)) rayed.push(q);
+  }
+  rayed.forEach(([, i, j], n) => {
+    const reach = 2 + Math.round(2 * (0.5 + 0.5 * Math.sin(clock * 5 + n * 1.7)));
     for (let d = 1; d <= reach; d++) {
-      const v = 1 - d / (reach + 1), col = css((255 * v) | 0, (235 * v) | 0, (245 * v) | 0);
+      const v = 0.8 * (1 - d / (reach + 1)), col = css((255 * v) | 0, (235 * v) | 0, (245 * v) | 0);
       g.fillStyle = col;
       g.fillText('-', (i + 0.5 + d * 2) * cw, (j + 0.5) * ch); g.fillText('-', (i + 0.5 - d * 2) * cw, (j + 0.5) * ch);
-      g.fillText('|', (i + 0.5) * cw, (j + 0.5 + d) * ch); g.fillText('|', (i + 0.5) * cw, (j + 0.5 - d) * ch);
+      if (d <= 2) { g.fillText('|', (i + 0.5) * cw, (j + 0.5 + d) * ch); g.fillText('|', (i + 0.5) * cw, (j + 0.5 - d) * ch); }
     }
   });
   // glow: shrink the picture twice and add it back, soft
